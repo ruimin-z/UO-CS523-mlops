@@ -212,11 +212,50 @@ class CustomTukeyTransformer(BaseEstimator, TransformerMixin):
         return result
 
 
+class CustomRobustTransformer(BaseEstimator, TransformerMixin):
+    def __init__(self, column):
+        self.column = column
+        self.iqr, self.med = None, None
+
+    def fit(self, X, y=None):
+        """Calculate iqr and median"""
+        assert isinstance(X,
+                          pd.core.frame.DataFrame), f'{self.__class__.__name__}.transform expected Dataframe but got {type(X)} instead.'
+        assert self.column in X.columns.to_list(), f'{self.__class__.__name__}.transform unknown column "{self.target_column}"'  # column legit?
+        assert all([isinstance(v, (int, float)) for v in X[self.column].to_list()])
+
+        q1 = X[self.column].quantile(0.25)
+        q3 = X[self.column].quantile(0.75)
+        self.iqr = q3 - q1
+        self.med = X[self.column].median()
+        return self
+
+    def transform(self, X):
+        """Scale using Robust Scaler"""
+        assert isinstance(X,
+                          pd.core.frame.DataFrame), f'{self.__class__.__name__}.transform expected Dataframe but got {type(X)} instead.'
+        assert self.iqr is not None and self.med is not None, f'NotFittedError: This {self.__class__.__name__} instance is not fitted yet. Call "fit" with appropriate arguments before using this estimator.'
+
+        X_ = X.copy()
+        X_[self.column] -= self.med
+        X_[self.column] /= self.iqr
+        X_[self.column].fillna(0, inplace=True)
+        return X_
+
+    def fit_transform(self, X, y=None):
+        self.fit(X)
+        result = self.transform(X)
+        return result
+
+
 customer_transformer = Pipeline(steps=[
     ('map_os', CustomMappingTransformer('OS', {'Android': 0, 'iOS': 1})),
     ('ohe_isp', CustomOHETransformer(target_column='ISP')),
     ('map_level', CustomMappingTransformer('Experience Level', {'low': 0, 'medium': 1, 'high': 2})),
     ('map_gender', CustomMappingTransformer('Gender', {'Male': 0, 'Female': 1})),
-    ('tukey_age', CustomTukeyTransformer('Age', 'inner')),
-    ('tukey_time spent', CustomTukeyTransformer('Time Spent', 'inner'))
+    ('tukey_age', CustomTukeyTransformer('Age', 'inner')),  # from chapter 4
+    ('tukey_time spent', CustomTukeyTransformer('Time Spent', 'inner')),  # from chapter 4
+    # add steps
+    ('robust_time spent', CustomRobustTransformer('Time Spent')),
+    ('robust_age', CustomRobustTransformer('Age'))
 ], verbose=True)
