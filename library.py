@@ -5,6 +5,7 @@ import sklearn
 sklearn.set_config(transform_output="pandas")  # says pass pandas tables through pipeline instead of numpy matrices
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline
+from sklearn.impute import KNNImputer
 
 
 class CustomMappingTransformer(BaseEstimator, TransformerMixin):
@@ -248,14 +249,21 @@ class CustomRobustTransformer(BaseEstimator, TransformerMixin):
         return result
 
 
-customer_transformer = Pipeline(steps=[
-    ('map_os', CustomMappingTransformer('OS', {'Android': 0, 'iOS': 1})),
-    ('ohe_isp', CustomOHETransformer(target_column='ISP')),
-    ('map_level', CustomMappingTransformer('Experience Level', {'low': 0, 'medium': 1, 'high': 2})),
-    ('map_gender', CustomMappingTransformer('Gender', {'Male': 0, 'Female': 1})),
-    ('tukey_age', CustomTukeyTransformer('Age', 'inner')),  # from chapter 4
-    ('tukey_time spent', CustomTukeyTransformer('Time Spent', 'inner')),  # from chapter 4
-    # add steps
-    ('robust_time spent', CustomRobustTransformer('Time Spent')),
-    ('robust_age', CustomRobustTransformer('Age'))
-], verbose=True)
+if __name__ == '__main__':
+    titanic_transformer = Pipeline(steps=[
+        ('map_gender', CustomMappingTransformer('Gender', {'Male': 0, 'Female': 1})),
+        ('map_class', CustomMappingTransformer('Class', {'Crew': 0, 'C3': 1, 'C2': 2, 'C1': 3})),
+        ('ohe_joined', CustomOHETransformer(target_column='Joined')),
+        ('tukey_age', CustomTukeyTransformer(target_column='Age', fence='outer')),
+        ('tukey_fare', CustomTukeyTransformer(target_column='Fare', fence='outer')),
+        ('scale_age', CustomRobustTransformer('Age')),
+        ('scale_fare', CustomRobustTransformer('Fare')),
+        # add step below
+        ('knn', KNNImputer(n_neighbors=10, weights='uniform', add_indicator=False))
+    ], verbose=True)
+
+    # url = 'https://raw.githubusercontent.com/ruimin-z/mlops/main/datasets/titanic_trimmed.csv'  # trimmed version
+    titanic_trimmed = pd.read_csv('datasets/titanic_trimmed.csv')
+    titanic_features = titanic_trimmed.drop(columns='Survived')
+    transformed_df = titanic_transformer.fit_transform(titanic_features)
+    # print(transformed_df)
