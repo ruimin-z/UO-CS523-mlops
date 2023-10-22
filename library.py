@@ -263,7 +263,7 @@ if __name__ == '__main__':
     ], verbose=True)
 
     # url = 'https://raw.githubusercontent.com/ruimin-z/mlops/main/datasets/titanic_trimmed.csv'  # trimmed version
-    titanic_trimmed = pd.read_csv('datasets/titanic_trimmed.csv')
-    titanic_features = titanic_trimmed.drop(columns='Survived')
-    transformed_df = titanic_transformer.fit_transform(titanic_features)
+    # titanic_trimmed = pd.read_csv('datasets/titanic_trimmed.csv')
+    # titanic_features = titanic_trimmed.drop(columns='Survived')
+    # transformed_df = titanic_transformer.fit_transform(titanic_features)
     # print(transformed_df)
