@@ -239,7 +239,7 @@ class CustomRobustTransformer(BaseEstimator, TransformerMixin):
         X_ = X.copy()
         X_[self.column] -= self.med
         X_[self.column] /= self.iqr
-        X_[self.column].fillna(0, inplace=True)
+        # X_[self.column].fillna(0, inplace=True)
         return X_
 
     def fit_transform(self, X, y=None):
