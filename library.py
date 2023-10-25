@@ -12,7 +12,7 @@ from sklearn.impute import KNNImputer
 
 import subprocess
 import sys
-# subprocess.call([sys.executable, '-m', 'pip', 'install', 'category_encoders'])  #replaces !pip install
+subprocess.call([sys.executable, '-m', 'pip', 'install', 'category_encoders'])  #replaces !pip install
 import category_encoders as ce
 
 
