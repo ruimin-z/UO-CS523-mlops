@@ -59,6 +59,8 @@ def udf_linear_regression(X_train_transformed, X_test_transformed):
     epochs = 100
     for i in range(epochs):
         w, b = sgd(ages, fare_labels, w, b)  # note start with w and b from past epoch
+        yhats = predict(ages, w, b)
+        mse.append(MSE(fare_labels, yhats))
 
     # minumum epoch and best epoch
     best_epoch = np.argmin(mse)
@@ -88,7 +90,7 @@ def udf_linear_regression(X_train_transformed, X_test_transformed):
 def main():
     '''Read titanic_trimmed.csv File'''
     url = 'https://raw.githubusercontent.com/ruimin-z/mlops/main/datasets/titanic_trimmed.csv'  # trimmed version
-    titanic_trimmed = pd.read_csv('datasets/titanic_trimmed.csv')
+    titanic_trimmed = pd.read_csv(url)
     titanic_features = titanic_trimmed.drop(columns='Survived')
 
     # machine learning algorithm
