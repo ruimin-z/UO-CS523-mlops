@@ -12,8 +12,16 @@ from sklearn.impute import KNNImputer
 
 import subprocess
 import sys
-subprocess.call([sys.executable, '-m', 'pip', 'install', 'category_encoders'])  #replaces !pip install
+
+# subprocess.call([sys.executable, '-m', 'pip', 'install', 'category_encoders'])  # replaces !pip install
 import category_encoders as ce
+
+'''Fitted Transformer'''
+
+
+# fitted_pipeline = titanic_transformer.fit(X_train, y_train)  # notice just fit method called
+# import joblib
+# joblib.dump(fitted_pipeline, 'fitted_pipeline.pkl')
 
 
 class CustomMappingTransformer(BaseEstimator, TransformerMixin):
@@ -150,6 +158,7 @@ class CustomSigma3Transformer(BaseEstimator, TransformerMixin):
     """
     Clip outliers using 3 Sigma method through standard deviation and mean
     """
+
     def __init__(self, target_column):
         self.target_column = target_column
         self.minb = None
@@ -188,6 +197,7 @@ class CustomTukeyTransformer(BaseEstimator, TransformerMixin):
     """
     Clip outliers using Tukey method through quartiles and median
     """
+
     def __init__(self, target_column, fence='outer'):
         assert fence in ['inner', 'outer']
         self.fence = fence
@@ -232,6 +242,7 @@ class CustomRobustTransformer(BaseEstimator, TransformerMixin):
     This class scales a given column values in [0,1] using Robust Scaler.
     Formula: value_new = (value – median) / iqr #iqr = q3-q1
     """
+
     def __init__(self, column):
         self.column = column
         self.iqr, self.med = None, None
@@ -290,9 +301,80 @@ def find_random_state(features_df, labels, n=200):
     return idx
 
 
+def predict(X, w, b):
+    yhat = [(x * w + b) for x in X]
+    return yhat
 
-titanic_variance_based_split = 107 # random state that provides best average
-customer_variance_based_split = 113 # random state that provides best average
+
+def MSE(Y, Yhat):
+    sdiffs = [(yhat - y) ** 2 for y, yhat in zip(Y, Yhat)]
+    mse = sum(sdiffs) / len(sdiffs)
+    return mse
+
+
+def sgd(X, Y, w, b, lr=.001):
+    # X is list of ages, Y is list of fare_labels, w is starting weight, b is stating bias, lr is learning rate
+    for i in range(len(X)):
+        # get values for rowi
+        xi = X[i]  # e.g., age on rowi
+        yi = Y[i]  # e.g., actual fare on rowi
+        yhat = w * xi + b  # prediction
+        # loss = (yhat - yi)**2 = ((w*xi+b) - yi)**2, i.e., f(g(x,w,b),yi)
+        # dloss/dw = dl/dyhat * dyhat/dw by the chain rule
+        # dloss/dyhat = 2*(yhat - yi) by the power rule (first part of chain)
+        # dyhat/dw = d((w*xi+b) - yi)/dw = xi (second part of chain)
+        gradient_w = 2 * (yhat - yi) * xi  # take the partial derivative wrt w to get slope
+        # for b same first part of chain but then #dyhat/db = d((w*xi+b) - yi)/db = 1 for second part of chain
+        gradient_b = 2 * (yhat - yi) * 1  # take the partial derivative wrt b to get slope
+        w = w - lr * gradient_w  # if len(X) is 2000, will change 2000 times
+        b = b - lr * gradient_b
+        # return the last w and b of the loop
+    return w, b
+
+
+def full_batch(X, Y, w, b, lr=.001):
+    gw = []
+    gb = []
+    for i in range(len(X)):
+        xi = X[i]
+        yi = Y[i]
+        yhat = w * xi + b  # prediction
+        gradient_w = 2 * (yhat - yi) * xi
+        gradient_b = 2 * (yhat - yi) * 1
+        gw.append(gradient_w)  # just collect change, don't make it
+        gb.append(gradient_b)
+    w = w - lr * sum(gw) / len(gw)  # Now average and make the change.
+    b = b - lr * sum(gb) / len(gb)
+    return w, b
+
+
+def mini_batch(X, Y, w, b, batch=1, lr=.001):
+    assert batch >= 1
+    assert batch <= len(X)
+
+    num = len(X) // batch if len(X) % batch == 0 else len(X) // batch + 1
+
+    for batch_idx in range(num):
+        start = batch_idx * batch
+        batch_X = X[start:batch + start]
+        batch_Y = Y[start:batch + start]
+        gw = []
+        gb = []
+        for i in range(len(batch_X)):
+            xi = batch_X[i]
+            yi = batch_Y[i]
+            yhat = w * xi + b  # prediction
+            gradient_w = 2 * (yhat - yi) * xi
+            gradient_b = 2 * (yhat - yi) * 1
+            gw.append(gradient_w)
+            gb.append(gradient_b)
+        w = w - lr * sum(gw) / len(gw)
+        b = b - lr * sum(gb) / len(gb)
+    return w, b
+
+
+titanic_variance_based_split = 107  # random state that provides best average
+customer_variance_based_split = 113  # random state that provides best average
 titanic_transformer = Pipeline(steps=[
     ('map_gender', CustomMappingTransformer('Gender', {'Male': 0, 'Female': 1})),
     ('map_class', CustomMappingTransformer('Class', {'Crew': 0, 'C3': 1, 'C2': 2, 'C1': 3})),
@@ -321,22 +403,3 @@ customer_transformer = Pipeline(steps=[
     ('scale_time spent', CustomRobustTransformer('Time Spent')),  # from 5
     ('impute', KNNImputer(n_neighbors=5, weights="uniform", add_indicator=False)),
 ], verbose=True)
-
-
-'''Fitted Transformer'''
-# fitted_pipeline = titanic_transformer.fit(X_train, y_train)  # notice just fit method called
-# import joblib
-# joblib.dump(fitted_pipeline, 'fitted_pipeline.pkl')
-
-
-'''Read titanic_trimmed.csv File'''
-# url = 'https://raw.githubusercontent.com/ruimin-z/mlops/main/datasets/titanic_trimmed.csv'  # trimmed version
-# titanic_trimmed = pd.read_csv('datasets/titanic_trimmed.csv')
-# titanic_features = titanic_trimmed.drop(columns='Survived')
-# transformed_df = titanic_transformer.fit_transform(titanic_features)
-
-'''Read customer.csv File'''
-# url = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQPM6PqZXgmAHfRYTcDZseyALRyVwkBtKEo_rtaKq_C7T0jycWxH6QVEzTzJCRA0m8Vz0k68eM9tDm-/pub?output=csv'
-# customers_df = pd.read_csv(url)
-# customers_trimmed = customers_df.drop(columns='ID')  #this is a useless column which we will drop early
-# customers_trimmed = customers_trimmed.drop_duplicates(ignore_index=True)  #get rid of any duplicates
