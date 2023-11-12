@@ -57,7 +57,7 @@ explainer = lime.lime_tabular.LimeTabularExplainer(X_train_numpy,
 
 # Store into file
 import dill as pickle
-with open('lime_explainer.pkl', 'wb') as file:
+with open('pkl/lime_explainer.pkl', 'wb') as file:
     pickle.dump(explainer, file)
 
 #['Age', 'Gender', 'Class', 'Married', 'Fare', 'Joined']

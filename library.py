@@ -1,5 +1,5 @@
 from Transformers import *
-from MachineLearning import *
+from KNN_F1score import *
 
 
 def dataset_setup(original_table, label_column_name: str, the_transformer, rs, ts=.2):
