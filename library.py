@@ -1,24 +1,25 @@
-# from Transformers import *
-# from KNN_F1score import *
+# from seperate_ver.Transformers import *
+# from seperate_ver.KNN_F1score import *
 
 from sklearn.base import BaseEstimator, TransformerMixin
 import pandas as pd
 import numpy as np
-import sklearn
-sklearn.set_config(transform_output="pandas")  # says pass pandas tables through pipeline instead of numpy matrices
-
-from sklearn.pipeline import Pipeline
-from sklearn.impute import KNNImputer
 import subprocess
 import sys
 
-subprocess.call([sys.executable, '-m', 'pip', 'install', 'category_encoders'])  # replaces !pip install
-import category_encoders as ce
+import sklearn
+from sklearn.linear_model import LogisticRegressionCV
 
-import numpy as np
+sklearn.set_config(transform_output="pandas")  # says pass pandas tables through pipeline instead of numpy matrices
+from sklearn.pipeline import Pipeline
+from sklearn.impute import KNNImputer
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier  # the KNN model
-from sklearn.metrics import f1_score  # typical metric used to measure goodness of a model
+from sklearn.metrics import f1_score, roc_auc_score  # typical metric used to measure goodness of a model
+from sklearn.metrics import precision_score, recall_score, accuracy_score
+
+subprocess.call([sys.executable, '-m', 'pip', 'install', 'category_encoders'])  # replaces !pip install
+import category_encoders as ce
 
 
 def find_random_state(features_df, labels, n=200):
@@ -115,7 +116,10 @@ def mini_batch(X, Y, w, b, batch=1, lr=.001):
         b = b - lr * sum(gb) / len(gb)
     return w, b
 
+
 '''Fitted Transformer'''
+
+
 # fitted_pipeline = titanic_transformer.fit(X_train, y_train)  # notice just fit method called
 # import joblib
 # joblib.dump(fitted_pipeline, 'fitted_pipeline.pkl')
@@ -406,8 +410,6 @@ customer_transformer = Pipeline(steps=[
 ], verbose=True)
 
 
-
-
 def dataset_setup(original_table, label_column_name: str, the_transformer, rs, ts=.2):
     labels = original_table[label_column_name].to_list()
     table_features = original_table.drop(columns=label_column_name)
@@ -430,3 +432,47 @@ def titanic_setup(titanic_table, transformer=titanic_transformer, rs=titanic_var
 
 def customer_setup(customer_table, transformer=customer_transformer, rs=customer_variance_based_split, ts=.2):
     return dataset_setup(customer_table, 'Rating', transformer, rs=rs, ts=ts)
+
+
+def threshold_results(thresh_list, actuals, predicted):
+    '''
+
+    Usage: result_df, fancy_df = threshold_results(np.round(np.arange(0.0,1.01,.05), 2), y_test, yraw)
+    '''
+    result_df = pd.DataFrame(columns=['threshold', 'precision', 'recall', 'f1', 'accuracy'])
+    for t in thresh_list:
+        yhat = [1 if v >= t else 0 for v in predicted]
+        # note: where TP=0, the Precision and Recall both become 0. And I am saying return 0 in that case.
+        precision = precision_score(actuals, yhat, zero_division=0)
+        recall = recall_score(actuals, yhat, zero_division=0)
+        f1 = f1_score(actuals, yhat)
+        accuracy = accuracy_score(actuals, yhat)
+        result_df.loc[len(result_df)] = {'threshold': t, 'precision': precision, 'recall': recall, 'f1': f1,
+                                         'accuracy': accuracy}
+
+    result_df = result_df.round(2)
+
+    # Next bit fancies up table for printing. See https://betterdatascience.com/style-pandas-dataframes/
+    # Note that fancy_df is not really a dataframe. More like a printable object.
+    headers = {
+        "selector": "th:not(.index_name)",
+        "props": "background-color: #800000; color: white; text-align: center"
+    }
+    properties = {"border": "1px solid black", "width": "65px", "text-align": "center"}
+
+    fancy_df = result_df.style.format(precision=2).set_properties(**properties).set_table_styles([headers])
+    return (result_df, fancy_df)
+
+
+def calculate_roc_auc_solvers(X_train, y_train, X_test, y_test):
+    # record AUC score using each solver separately
+    roc_auc_scores = []
+    solvers = ['newton-cg', 'lbfgs', 'liblinear', 'sag', 'saga']
+    for sol in solvers:
+        model = LogisticRegressionCV(cv=5, random_state=1, solver=sol, max_iter=500)
+        model.fit(X_train, y_train)
+        yraw = model.predict_proba(X_test)[:, 1]
+        roc_auc_scores.append((sol, roc_auc_score(y_test, yraw)))
+    # sort on AUC score
+    roc_auc_scores.sort(key=lambda x: x[1])
+    return roc_auc_scores
