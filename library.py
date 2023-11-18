@@ -450,8 +450,6 @@ def mini_batch(X, Y, w, b, batch=1, lr=.001):
 # Stratified k-folds, sigmoid threshold, Lime Explainer
 # (Ch9)
 # ----------------------------------------------------------------------------
-import lime
-from lime import lime_tabular
 from sklearn.linear_model import LogisticRegressionCV
 
 def Chapter9(csv_url='https://raw.githubusercontent.com/fickas/asynch_models/main/datasets/titanic_trimmed.csv',label='Survived'):
@@ -488,6 +486,8 @@ def Chapter9(csv_url='https://raw.githubusercontent.com/fickas/asynch_models/mai
     all(yhat2==yhat)  #yhat is what we got from model.predict
     sum([a==b for a,b in zip(yhat2, y_test_numpy)])/len(yhat2)  #accuary on test set
 
+    import lime
+    from lime import lime_tabular
     # lime explainer
     feature_names  = X_train_transformed.columns.to_list()
     explainer = lime.lime_tabular.LimeTabularExplainer(X_train_numpy,
@@ -646,8 +646,15 @@ def Chapter11():
     best_svc_model = grid_result.best_estimator_  # get best model because we have refit=True
     best_svc_model.get_params()
 
-
+'''
+Example Usage:
+# define grid ...
+grid_result = halving_search(dt_model, dt_grid, x_train, y_train)
+best_model = grid_result.best_estimator_
+grid_result.best_params_
+'''
 def halving_search(model, grid, x_train, y_train, factor=2, min_resources="exhaust", scoring='roc_auc'):
+
   halving_cv = HalvingGridSearchCV(
     model, grid,  #our model and the parameter combos we want to try
     scoring=scoring,  #from chapter 10
