@@ -486,19 +486,19 @@ def Chapter9(csv_url='https://raw.githubusercontent.com/fickas/asynch_models/mai
     all(yhat2==yhat)  #yhat is what we got from model.predict
     sum([a==b for a,b in zip(yhat2, y_test_numpy)])/len(yhat2)  #accuary on test set
 
-    import lime
-    from lime import lime_tabular
-    # lime explainer
-    feature_names  = X_train_transformed.columns.to_list()
-    explainer = lime.lime_tabular.LimeTabularExplainer(X_train_numpy,
-                        feature_names=feature_names,
-                        training_labels=y_train_numpy,
-                        class_names=[0,1], #Outcome values
-                        verbose=True,
-                        mode='classification')
-    import dill as pickle
-    with open('lime_explainer.pkl', 'wb') as file:
-        pickle.dump(explainer, file)
+    # # lime explainer
+    # import lime
+    # from lime import lime_tabular
+    # feature_names  = X_train_transformed.columns.to_list()
+    # explainer = lime.lime_tabular.LimeTabularExplainer(X_train_numpy,
+    #                     feature_names=feature_names,
+    #                     training_labels=y_train_numpy,
+    #                     class_names=[0,1], #Outcome values
+    #                     verbose=True,
+    #                     mode='classification')
+    # import dill as pickle
+    # with open('lime_explainer.pkl', 'wb') as file:
+    #     pickle.dump(explainer, file)
 
 
 # ----------------------------------------------------------------------------
