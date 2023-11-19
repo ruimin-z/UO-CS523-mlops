@@ -502,12 +502,16 @@ def Chapter9(csv_url='https://raw.githubusercontent.com/fickas/asynch_models/mai
 
 
 # ----------------------------------------------------------------------------
-# Confusion Matrix (Precision, Recall, F1, MCC), ROC AUC - score=area under curve
+# Scores - F1, ACC(Confusion Matrix (Precision, Recall)), ROC AUC(score=area under curve -> best threshold)
+# MCC(Matthews Correlation Coefficient) - MCC 是一种用于评估分类器性能的度量。
+#                                         Matthews相关系数（MCC）不是分数，而是一个在区间 [-1, 1] 内的值。
+#                                         MCC 的值越接近 1，表示分类器的性能越好。这使得 MCC 成为处理类别不平衡数据时的一种有用的度量标准。
+# Threshold Table: F1(f1_score), Accuracy(accuracy_score)
+# ROC AUC: roc_auc_score(y_test, yraw)
 # (Ch10)
 # ----------------------------------------------------------------------------
 def threshold_results(thresh_list, actuals, predicted):
     '''
-
     Usage: result_df, fancy_df = threshold_results(np.round(np.arange(0.0,1.01,.05), 2), y_test, yraw)
     '''
     result_df = pd.DataFrame(columns=['threshold', 'precision', 'recall', 'f1', 'accuracy'])
@@ -669,9 +673,94 @@ def halving_search(model, grid, x_train, y_train, factor=2, min_resources="exhau
 
 
 # ----------------------------------------------------------------------------
-# DecisionTreeClassifier,
+# DecisionTreeClassifier,RandomForestClassifier, XGBClassifier,
+# Boosting, XGBoost
 # (Ch12)
 # ----------------------------------------------------------------------------
+def Chapter12():
+    url = 'https://raw.githubusercontent.com/fickas/asynch_models/main/datasets/titanic_trimmed.csv'  #trimmed version
+    titanic_trimmed = pd.read_csv(url)
+    titanic_features = titanic_trimmed.drop(columns='Survived')
+    labels = titanic_trimmed['Survived'].to_list()
+    x_train, x_test, y_train, y_test = titanic_setup(titanic_trimmed)
+
+    # Tree - Decision Tree
+    from sklearn.tree import DecisionTreeClassifier
+    dt_model = DecisionTreeClassifier(random_state=1234)
+    dt_grid = dict(criterion=['gini', 'entropy'],  #algorithms that judge the goodness of a split
+                    max_features=['sqrt', 'log2', None],  #how many features to consider for a split - None=all
+                    max_depth=range(1,15),
+    )
+    grid_result = halving_search(dt_model, dt_grid, x_train, y_train)
+    best_model = grid_result.best_estimator_
+    grid_result.best_params_   #{'criterion': 'entropy', 'max_depth': 3, 'max_features': 'sqrt'}
+    # Test set
+    yraw = best_model.predict_proba(x_test)[:,1]
+    from sklearn.metrics import roc_auc_score
+    roc_auc_score(y_test, yraw)  #0.7801424702696338
+    result_df, fancy_df = threshold_results(np.round(np.arange(0.0,1.01,.05), 2), y_test, yraw)
+    # Tuned Decision Tree: Best f1=.70, accuracy=.73, auc=.78
+
+    # From Tree to Forest - Random Forest
+    from sklearn.ensemble import RandomForestClassifier
+    rf_model = RandomForestClassifier(random_state=1234)
+    rf_model.fit(x_train, y_train)
+    yraw = rf_model.predict_proba(x_test)[:, 1]
+    roc_auc_score(y_test, yraw)  # 0.7147651006711411
+    result_df, fancy_df = threshold_results(np.round(np.arange(0.0, 1.01, .05), 2), y_test, yraw)
+    # Untuned Forest: Best f1=0.64, accuracy=70, auc=.71.
+
+    # From Random to Boosting - XGBoost
+    from xgboost import XGBClassifier  #using sklearn compatible version
+    xgb_model = XGBClassifier(random_state=1234, objective='binary:logistic', eval_metric='auc')
+    xgb_model.fit(x_train, y_train)
+    roc_auc_score(y_test, yraw)  #0.7721064405981397
+    result_df, fancy_df = threshold_results(np.round(np.arange(0.0,1.01,.05), 2), y_test, yraw)
+    # Untuned XGBoost: Best f1=.68, accuracy=.74, auc=.77
+
+    # Tuned Boosting
+    xgb_grid = {
+        "n_estimators": range(10, 201, 10),  # number of trees
+        "max_depth": range(1, 15),  # max tree depth
+        "learning_rate": [0.1, 0.2, 0.3, 0.4],
+        "subsample": [.25, .5, 0.75],  # Fix subsample
+        "booster": ['dart', 'gbtree', 'gblinear'],
+    }
+    np.prod([len(v) for k, v in xgb_grid.items()])  # 10080 - another way to see number of combos
+    xgb_model = XGBClassifier(random_state=1234, objective='binary:logistic', eval_metric='auc')
+    grid_result = halving_search(xgb_model, xgb_grid, x_train, y_train)
+    best_model = grid_result.best_estimator_
+    print(grid_result.best_params_)
+    yraw = best_model.predict_proba(x_test)[:, 1]
+    roc_auc_score(y_test, yraw)  # 0.8170846579536089
+    result_df, fancy_df = threshold_results(np.round(np.arange(0.0, 1.01, .05), 2), y_test, yraw)
+    # Tuned XGBoost: Best f1=.74, accuracy=.76, auc=.82
+
+    best_model_ch1 = best_model  # remember for future reference
+    result_df_ch1 = result_df
+    # save results
+    result_df_ch1.to_csv('xgb_thresholds.csv', index=False)
+    from joblib import dump
+    dump(best_model_ch1, 'xgb_model.joblib')
+
+    # Introduce two more variables for regularization
+    xgb_grid1 = {
+        'n_estimators': [10],
+        'max_depth': [4],
+        'learning_rate': [0.1],
+        'subsample': [0.75],
+        'booster': ['dart'],
+        'reg_alpha': [0, 1e-5, 1e-2, 0.1, 1, 10],
+        'reg_lambda': [0, 1e-5, 1e-2, 0.1, 1, 10]
+    }
+    xgb_model = XGBClassifier(random_state=1234, objective='binary:logistic', eval_metric='auc')
+    grid_result = halving_search(xgb_model, xgb_grid1, x_train, y_train)
+    best_model = grid_result.best_estimator_
+    print(grid_result.best_params_)
+    yraw = best_model.predict_proba(x_test)[:, 1]
+    roc_auc_score(y_test, yraw)  # 0.8012775226657247
+    result_df, fancy_df = threshold_results(np.round(np.arange(0.0, 1.01, .05), 2), y_test, yraw)
+    # Incrementally tuned XGBoost: Best f1=0.74, acc=0.75, auc=0.82
 
 
 # ----------------------------------------------------------------------------
