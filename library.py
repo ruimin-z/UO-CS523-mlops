@@ -7,6 +7,7 @@ import numpy as np
 import subprocess
 import sys
 import sklearn
+import matplotlib.pyplot as plt
 from sklearn.linear_model import LogisticRegressionCV
 sklearn.set_config(transform_output="pandas")  # says pass pandas tables through pipeline instead of numpy matrices
 from sklearn.pipeline import Pipeline
@@ -764,9 +765,209 @@ def Chapter12():
 
 
 # ----------------------------------------------------------------------------
-#
+# Tensorflow, ANN, Random Search, HyperModel, Optimizer, Exponential Decay
 # (Ch13)
+# Following Code only contains 13-Part2
 # ----------------------------------------------------------------------------
+from tensorflow.keras import Sequential
+from tensorflow.keras.layers import Dense, Activation, Dropout, Input
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import backend as K
+from sklearn.metrics import roc_auc_score
+
+def Untuned_ANN(x_train, y_train, x_test, y_test):
+    tf.keras.utils.set_random_seed(1234)  #need this for replication
+    tf.config.experimental.enable_op_determinism()  #ditto - https://www.tensorflow.org/api_docs/python/tf/config/experimental/enable_op_determinism
+    np.random.seed(seed=1234)
+    tf.random.set_seed(1234)
+
+    initializer = tf.keras.initializers.HeNormal(seed=1234)  #weight initializer - works well with our activation functions
+    l2_regu = tf.keras.regularizers.L2(0.01)  #weight regularization - could tune the (reverse) lambda parameter
+    act_fn = 'relu'  #long version: tf.keras.activations.relu()
+    feature_n = x_train.shape[1]  #number of features using numpy shape attribute
+
+    ann_model = Sequential()  #we will always use this in our class. It means left-to-right and dense.
+    ann_model.add(Input(shape=(feature_n,), name=f"input_layer"))  #implied in last part but decided to make it explicit.
+    #could put Dropout here if wanted to drop features
+    #hidden layer 1
+    ann_model.add(Dense(units=16, activation=act_fn, activity_regularizer=l2_regu, kernel_initializer=initializer, name='hidden1'))
+    ann_model.add(Dropout(.2))
+    #hidden layer 2
+    ann_model.add(Dense(units=8, activation=act_fn, activity_regularizer=l2_regu, kernel_initializer=initializer, name='hidden2'))
+    ann_model.add(Dropout(.2))  #could tune dropout percentage
+    #hidden layer 3
+    #hidden layer 4
+    #output layer for binary classification
+    ann_model.add(Dense(units=1, activation='sigmoid', name='output'))  #only 1 node and using sigmoid (just like with logistic regression!)
+
+    # compile
+    lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(initial_learning_rate=0.001, decay_steps=10000, decay_rate=0.9)
+    ann_model.compile(loss=tf.keras.losses.BinaryCrossentropy(),
+                      optimizer=tf.keras.optimizers.Adam(learning_rate=lr_schedule),
+                      metrics = [tf.keras.metrics.AUC(name='auc')]  #area under curve for performance
+    )
+
+    # train
+    early_stop_cb = tf.keras.callbacks.EarlyStopping(
+        monitor='loss',
+        min_delta=0,
+        patience=10,  #Wait 10 epochs for loss to improve - if no decrease, stop
+        verbose=0
+    )
+    batch = 100  #https://ai.stackexchange.com/questions/8560/how-do-i-choose-the-optimal-batch-size
+    epochs = 100  #mostly a guess
+    training = ann_model.fit(x=x_train,
+                            y=y_train,
+                             batch_size=batch,
+                             epochs=epochs,
+                             verbose=0,
+                             callbacks=[early_stop_cb])
+    # check if stopped early
+    len(training.history['auc'])  #looks like yes at 88
+    # auc on train
+    training.history['auc'][-1]  #0.752564013004303
+    # plot on train
+    plt.plot(training.history['auc'])
+    plt.plot(training.history['loss'])
+    plt.title('ROC AUC')
+    plt.xlabel('epoch')
+    plt.legend(['ROC AUC', 'loss'], loc='upper left')
+    plt.show()
+
+    # run on test
+    ann_model.evaluate(x_test, y_test)  #loss,auc: [0.5923882722854614, 0.7728423476219177]
+    yraw = ann_model.predict(x_test)[:,0]  #pull out prob of 1
+    result_df, fancy_df = threshold_results(np.round(np.arange(0.0,1.01,.05), 2), y_test, yraw)
+    # Best results: f1=.68, accuracy=.71, auc=.77
+
+# Tuning
+# !pip install keras-tuner -q
+import keras_tuner
+class MyHyperModel(keras_tuner.HyperModel):
+  def __init__(self, n=6, metrics=tf.keras.metrics.AUC(name='auc')):
+    self.n = n  #number of features
+    self.metrics = metrics
+
+  def build(self, hp):
+
+    feature_n = self.n
+    metrics = self.metrics
+
+    #could experiment with these but decided to fix
+    l2_regu = tf.keras.regularizers.L2(0.01)  #weight regularization during gradient descent
+    initializer = tf.keras.initializers.HeNormal(seed=1234)  #works ok with both relu and leaky-relu
+    leaky = tf.keras.layers.LeakyReLU()  #leaky relu does not have string short-cut as relu does given it has a parameter
+
+    #you could also randomly choose the maximum layers here if you wanted.
+    max_layers = 6
+
+    model = Sequential()
+
+    model.add(Input(shape=(feature_n,), name=f"input_layer"))
+    #could put Dropout here if wanted to drop features
+
+
+    #add one or more new hidden layers
+    layers = hp.Int("layers", min_value=1, max_value=max_layers, step=1)
+    for i in range(layers):
+      model.add(Dense(
+          activity_regularizer=l2_regu, kernel_initializer=initializer, #fixed above
+          # Tune number of units.
+          units=hp.Int(f"hidden_units{i}", min_value=2, max_value=16, step=1),
+          # Tune the activation function to use.
+          activation= 'relu' if hp.Boolean(f"act_relu{i}") else leaky,
+          name=f"hidden_layer{i}"
+          )
+      )
+      #Choose whether to use Dropout and how much
+      if hp.Boolean(f"dropout{i}"):
+        rate = hp.Float(f"drate{i}", min_value=.1, max_value=.5, sampling="linear")
+        model.add(Dropout(rate=rate))
+
+    #now output layer
+    model.add(Dense(units=1, activation='sigmoid', name='output'))
+
+    # Define the optimizer learning rate as a hyperparameter.
+    learning_rate = hp.Float("lr", min_value=1e-4, max_value=1e-2, sampling="log")
+    lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(initial_learning_rate=learning_rate, decay_steps=10000, decay_rate=0.9)
+    model.compile(loss=tf.keras.losses.BinaryCrossentropy(),  #hard code loss
+                  optimizer=tf.keras.optimizers.Adam(learning_rate=lr_schedule),
+                  metrics=[metrics])
+    return model
+
+# Tuning begins
+def Tuning(x_train, y_train, x_test,y_test):
+    max_trials = 40 # how many to sample? a tough choice - larger is better but takes more time
+    hyper_tuner = keras_tuner.RandomSearch(
+        hypermodel=MyHyperModel(),
+        objective=keras_tuner.Objective('auc', 'max'),  #cannot use auc object as previously defined - have to use instance of keras_tuner.Objective class instead
+        max_trials=max_trials,  #how many models to build, i.e., how many different configs to try
+        executions_per_trial=1,
+        overwrite=True,
+        directory="mlops/tb",  #for use by TensorBoard
+        seed=1234,
+    )
+    # cross-validation k-fold
+    x_train_tune = x_train[:-250]  #250/1050 roughly 20% - notice not stratified
+    x_train_val = x_train[-250:]
+    y_train_tune = y_train[:-250]
+    y_train_val = y_train[-250:]
+
+    # Search
+    # %%time
+    hyper_tuner.search(x_train_tune, y_train_tune,
+                       epochs=100, batch_size=100,
+                       validation_data=(x_train_val, y_train_val),
+                       #callbacks=[keras.callbacks.TensorBoard("mlops/tb_logs")]  #for use by TensorBoard - discussed below
+                       )
+    K.clear_session()  #clean up all those models we built
+
+    best_hp = hyper_tuner.get_best_hyperparameters()[0]
+    best_hp.values # best model result
+
+    # Train best model
+    tf.keras.utils.set_random_seed(1234)  #need this for replication
+    tf.config.experimental.enable_op_determinism()  #ditto - https://www.tensorflow.org/api_docs/python/tf/config/experimental/enable_op_determinism
+    np.random.seed(seed=1234)
+    tf.random.set_seed(1234)
+    # %%capture
+    hypermodel = MyHyperModel()
+    model2 = hypermodel.build(best_hp)  #this now has one choice for each generator, the best choice
+    # train
+    early_stop_cb = tf.keras.callbacks.EarlyStopping(
+        monitor='loss',
+        min_delta=0,
+        patience=10,  # Wait 10 epochs for loss to improve - if no decrease, stop
+        verbose=0
+    )
+    # TODO: why no batch???
+    training = hypermodel.fit(best_hp, model2, x_train, y_train, epochs=100,  callbacks=[early_stop_cb])
+    model2.summary()
+    len(training.history['auc'])  #no early stopping
+    # plotting
+    plt.plot(training.history['auc'])
+    plt.plot(training.history['loss'])
+    plt.title('ROC AUC')
+    plt.xlabel('epoch')
+    plt.legend(['ROC AUC', 'loss'], loc='upper left')
+    plt.show()
+    # Test and Predict
+    model2.evaluate(x_test,y_test)  #loss,auc: [0.5654059648513794, 0.7938302159309387]
+    yraw = model2.predict(x_test)[:,0]
+    result_df, fancy_df = threshold_results(np.round(np.arange(0.0,1.01,.05), 2), y_test, yraw)
+    # Looks better: f1=.69 and accuracy=.75 and auc=0.79
+
+    # save and load model
+    model2.save('ann_model.keras')
+    model3 = tf.keras.models.load_model('ann_model.keras')  # load back in
+    result_df.to_csv('ann_thresholds.csv', index=False)
+
+# def TensorBoard():
+    ## callbacks=[keras.callbacks.TensorBoard("mlops/tb_logs")]  #for use by TensorBoard
+    # %load_ext tensorboard
+    # %tensorboard --logdir mlops/tb_logs
+
 
 
 # ----------------------------------------------------------------------------
