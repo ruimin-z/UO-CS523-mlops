@@ -10,7 +10,7 @@ from library import *
 
 '''Read in Data, Data Wrangling'''
 url = 'https://raw.githubusercontent.com/ruimin-z/mlops/main/datasets/titanic_trimmed.csv'  # trimmed version
-titanic_trimmed = pd.read_csv('../datasets/titanic_trimmed.csv')
+titanic_trimmed = pd.read_csv('../datasets/titanic/titanic_trimmed.csv')
 X_train_numpy, X_test_numpy, y_train_numpy, y_test_numpy = titanic_setup(titanic_trimmed)
 
 '''Define Model'''
@@ -57,7 +57,7 @@ explainer = lime.lime_tabular.LimeTabularExplainer(X_train_numpy,
 
 # Store into file
 import dill as pickle
-with open('../pkl/lime_explainer.pkl', 'wb') as file:
+with open('../datasets/titanic/result/lime_explainer.pkl', 'wb') as file:
     pickle.dump(explainer, file)
 
 #['Age', 'Gender', 'Class', 'Married', 'Fare', 'Joined']

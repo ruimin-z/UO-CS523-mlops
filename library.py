@@ -601,11 +601,11 @@ def Chapter11():
     # save result
     result_df.to_csv('knn_thresholds.csv', index=False)
     from joblib import dump
-    dump(best_knn_model, 'knn_model.joblib')
+    dump(best_knn_model, 'datasets/titanic/result/knn_model.joblib')
 
     # load result
     from joblib import load
-    knn_model2 = load('knn_model.joblib')
+    knn_model2 = load('datasets/titanic/result/knn_model.joblib')
     knn_model2.predict_proba(x_test)[:,1][:5]  #array([0.6       , 1.        , 1.        , 0.13333333, 0.06666667])
     best_knn_model.predict_proba(x_test)[:,1][:5]  #array([0.6       , 1.        , 1.        , 0.13333333, 0.06666667])
 
@@ -742,7 +742,7 @@ def Chapter12():
     # save results
     result_df_ch1.to_csv('xgb_thresholds.csv', index=False)
     from joblib import dump
-    dump(best_model_ch1, 'xgb_model.joblib')
+    dump(best_model_ch1, 'datasets/titanic/result/xgb_model.joblib')
 
     # Introduce two more variables for regularization
     xgb_grid1 = {
